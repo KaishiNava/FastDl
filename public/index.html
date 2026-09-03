@@ -860,7 +860,7 @@
       return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
-    dlForm.addEventListener('submit', async (e) => {
+        dlForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const targetUrl = urlInput.value.trim();
       if (!targetUrl) return;
@@ -878,61 +878,55 @@
 
         const resData = await response.json();
 
-        if (resData.status && resData.data) {
-          const data = resData.data;
+        if (resData.status && resData.result) {
+          const { title, thumbnail, links } = resData.result;
+
           resultBox.style.display = 'block';
-
-          const title = data.title || data.caption || 'Video Media Download';
-          const thumb = data.thumbnail || data.cover || data.image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80';
-
           mediaCaption.innerText = title;
-          mediaThumb.src = thumb;
+          if (thumbnail) mediaThumb.src = thumbnail;
+
           dlLinks.innerHTML = '';
           let primaryDlUrl = '#';
 
-          if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
-            primaryDlUrl = data.urls[0].url || data.urls[0];
-            data.urls.forEach((linkObj, i) => {
-              const url = typeof linkObj === 'string' ? linkObj : linkObj.url;
-              const label = typeof linkObj === 'object' && linkObj.subname ? linkObj.subname : `Download Link ${i + 1}`;
+          if (links && links.length > 0) {
+            links.forEach((item, i) => {
+              if (i === 0) primaryDlUrl = item.url;
               const a = document.createElement('a');
-              a.href = url;
+              a.href = item.url;
               a.target = '_blank';
+              a.rel = 'noopener noreferrer';
               a.className = i === 0 ? 'dl-btn primary' : 'dl-btn';
-              a.innerText = label;
+              a.innerText = item.quality || `Unduh (${i + 1})`;
               dlLinks.appendChild(a);
             });
-          } else if (data.url || data.download_url) {
-            primaryDlUrl = data.url || data.download_url;
-            const a = document.createElement('a');
-            a.href = primaryDlUrl;
-            a.target = '_blank';
-            a.className = 'dl-btn primary';
-            a.innerText = 'Download Video / Media';
-            dlLinks.appendChild(a);
+          } else {
+            dlLinks.innerHTML = '<p style="font-size: 12px; color: var(--text-dim);">Link tidak ditemukan.</p>';
           }
 
           let domainName = 'Penyedia Media';
           try { domainName = new URL(targetUrl).hostname.replace('www.', ''); } catch(e) {}
           resultPlatform.innerText = domainName;
 
-          saveToHistory({
-            title: title,
-            url: targetUrl,
-            downloadUrl: primaryDlUrl,
-            domain: domainName,
-            date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-          });
+          if (primaryDlUrl !== '#') {
+            saveToHistory({
+              title,
+              url: targetUrl,
+              downloadUrl: primaryDlUrl,
+              domain: domainName,
+              date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+            });
+          }
         } else {
-          alert('Gagal mengekstrak media.');
+          alert(resData.message || 'Gagal mengekstrak video.');
         }
       } catch (err) {
-        alert('Kesalahan jaringan: ' + err.message);
+        alert('Kesalahan koneksi.');
       } finally {
         btnSubmit.disabled = false;
         btnText.innerText = 'Unduh Sekarang';
       }
     });
+
 
     updateBadge();
   </script>
