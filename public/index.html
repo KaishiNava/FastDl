@@ -860,67 +860,236 @@
       return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
-        dlForm.addEventListener('submit', async (e) => {
+        // =========================================================
+    // API CONFIG
+    // =========================================================
+    // Jika API berada di project Vercel yang sama, biarkan:
+    const API_URL = '/api/download';
+
+    // Jika API berbeda domain, ganti menjadi:
+    // const API_URL = 'https://domain-api-kamu.vercel.app/api/download';
+
+    function getYouTubeThumbnail(url) {
+      try {
+        const u = new URL(url);
+        let id = '';
+
+        if (u.hostname.includes('youtu.be')) {
+          id = u.pathname.split('/').filter(Boolean)[0] || '';
+        } else if (u.hostname.includes('youtube.com')) {
+          id = u.searchParams.get('v') || '';
+
+          if (!id && u.pathname.startsWith('/shorts/')) {
+            id = u.pathname.split('/')[2] || '';
+          }
+
+          if (!id && u.pathname.startsWith('/embed/')) {
+            id = u.pathname.split('/')[2] || '';
+          }
+        }
+
+        return id
+          ? `https://i.ytimg.com/vi/${encodeURIComponent(id)}/hqdefault.jpg`
+          : '';
+      } catch {
+        return '';
+      }
+    }
+
+    function setThumbnail(url, sourceUrl) {
+      const fallback = getYouTubeThumbnail(sourceUrl);
+      const thumbnail = url || fallback;
+
+      mediaThumb.onerror = () => {
+        if (fallback && mediaThumb.src !== fallback) {
+          mediaThumb.src = fallback;
+        } else {
+          mediaThumb.removeAttribute('src');
+          mediaThumb.alt = 'Thumbnail tidak tersedia';
+        }
+      };
+
+      if (thumbnail) {
+        mediaThumb.src = thumbnail;
+        mediaThumb.alt = 'Thumbnail Preview';
+      } else {
+        mediaThumb.removeAttribute('src');
+        mediaThumb.alt = 'Thumbnail tidak tersedia';
+      }
+    }
+
+    function normalizeLinks(links) {
+      if (!Array.isArray(links)) return [];
+
+      return links
+        .map((item) => {
+          if (typeof item === 'string') {
+            return {
+              url: item,
+              quality: 'Download'
+            };
+          }
+
+          if (!item || typeof item !== 'object') return null;
+
+          const url =
+            item.url ||
+            item.download ||
+            item.download_url ||
+            item.link ||
+            item.src;
+
+          if (!url) return null;
+
+          return {
+            url,
+            quality:
+              item.quality ||
+              item.qualityLabel ||
+              item.label ||
+              item.name ||
+              item.extension ||
+              'Download'
+          };
+        })
+        .filter((item) => item && item.url);
+    }
+
+    function showApiError(message) {
+      resultBox.style.display = 'block';
+      mediaCaption.innerText = message || 'Gagal memproses media.';
+      mediaThumb.removeAttribute('src');
+      mediaThumb.alt = 'Thumbnail tidak tersedia';
+      dlLinks.innerHTML = '';
+      resultPlatform.innerText = 'ERROR';
+    }
+
+    dlForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+
       const targetUrl = urlInput.value.trim();
       if (!targetUrl) return;
+
+      try {
+        new URL(targetUrl);
+      } catch {
+        alert('URL tidak valid.');
+        return;
+      }
 
       btnSubmit.disabled = true;
       btnText.innerHTML = '<span class="loader"></span> Memproses...';
       resultBox.style.display = 'none';
+      dlLinks.innerHTML = '';
 
       try {
-        const response = await fetch('/api/download', {
+        const response = await fetch(API_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: targetUrl })
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            url: targetUrl
+          })
         });
 
-        const resData = await response.json();
+        const contentType = response.headers.get('content-type') || '';
 
-        if (resData.status && resData.result) {
-          const { title, thumbnail, links } = resData.result;
+        let resData;
 
-          resultBox.style.display = 'block';
-          mediaCaption.innerText = title;
-          if (thumbnail) mediaThumb.src = thumbnail;
+        if (contentType.includes('application/json')) {
+          resData = await response.json();
+        } else {
+          const text = await response.text();
+          throw new Error(
+            `API mengembalikan response non-JSON (${response.status}): ${text.slice(0, 200)}`
+          );
+        }
 
-          dlLinks.innerHTML = '';
-          let primaryDlUrl = '#';
+        if (!response.ok || !resData.status) {
+          const detail =
+            resData.message ||
+            `API gagal (${response.status})`;
 
-          if (links && links.length > 0) {
-            links.forEach((item, i) => {
-              if (i === 0) primaryDlUrl = item.url;
-              const a = document.createElement('a');
-              a.href = item.url;
-              a.target = '_blank';
-              a.rel = 'noopener noreferrer';
-              a.className = i === 0 ? 'dl-btn primary' : 'dl-btn';
-              a.innerText = item.quality || `Unduh (${i + 1})`;
-              dlLinks.appendChild(a);
-            });
-          } else {
-            dlLinks.innerHTML = '<p style="font-size: 12px; color: var(--text-dim);">Link tidak ditemukan.</p>';
-          }
+          throw new Error(detail);
+        }
 
-          let domainName = 'Penyedia Media';
-          try { domainName = new URL(targetUrl).hostname.replace('www.', ''); } catch(e) {}
-          resultPlatform.innerText = domainName;
+        const result = resData.result || {};
 
-          if (primaryDlUrl !== '#') {
+        const title =
+          result.title ||
+          result.caption ||
+          'Video Downloader';
+
+        const thumbnail = result.thumbnail || '';
+        const links = normalizeLinks(result.links);
+
+        resultBox.style.display = 'block';
+        mediaCaption.innerText = title;
+        setThumbnail(thumbnail, targetUrl);
+
+        let domainName = 'Penyedia Media';
+
+        try {
+          domainName = new URL(targetUrl)
+            .hostname
+            .replace(/^www\./, '');
+        } catch {}
+
+        resultPlatform.innerText = domainName;
+
+        if (links.length > 0) {
+          let primaryDlUrl = '';
+
+          links.forEach((item, i) => {
+            if (i === 0) primaryDlUrl = item.url;
+
+            const a = document.createElement('a');
+
+            a.href = item.url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.className = i === 0
+              ? 'dl-btn primary'
+              : 'dl-btn';
+
+            a.innerText =
+              item.quality ||
+              `Unduh (${i + 1})`;
+
+            dlLinks.appendChild(a);
+          });
+
+          if (primaryDlUrl) {
             saveToHistory({
               title,
               url: targetUrl,
               downloadUrl: primaryDlUrl,
               domain: domainName,
-              date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+              date: new Date().toLocaleDateString(
+                'id-ID',
+                {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                }
+              )
             });
           }
         } else {
-          alert(resData.message || 'Gagal mengekstrak video.');
+          dlLinks.innerHTML =
+            '<p style="font-size:12px;color:var(--text-dim);">Link download tidak ditemukan dari API.</p>';
         }
+
       } catch (err) {
-        alert('Kesalahan koneksi.');
+        console.error('Theresia FastDL:', err);
+
+        showApiError(
+          err?.message ||
+          'Tidak dapat terhubung ke API.'
+        );
       } finally {
         btnSubmit.disabled = false;
         btnText.innerText = 'Unduh Sekarang';
