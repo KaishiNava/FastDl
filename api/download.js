@@ -4,7 +4,7 @@ const BASE_URL = 'https://getdl.space';
 const API_ENDPOINT = `${BASE_URL}/api/download`;
 
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Referer': `${BASE_URL}/id`,
   'Origin': BASE_URL,
   'Content-Type': 'application/json',
@@ -13,50 +13,38 @@ const HEADERS = {
 };
 
 module.exports = async (req, res) => {
-  // Setup CORS Header
-  res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ status: false, message: 'Method Not Allowed' });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ status: false, message: 'Method Not Allowed' });
 
   const { url } = req.body || {};
-
-  if (!url) {
-    return res.status(400).json({ status: false, message: 'URL tidak boleh kosong' });
-  }
+  if (!url) return res.status(400).json({ status: false, message: 'URL kosong' });
 
   try {
-    const response = await axios.post(API_ENDPOINT, 
-      { url: url }, 
-      {
-        headers: HEADERS,
-        responseType: 'json',
-        timeout: 15000
-      }
-    );
+    const response = await axios.post(API_ENDPOINT, { url }, { headers: HEADERS, timeout: 15000 });
+    const rawData = response.data;
+
+    // Normalisasi struktur data
+    let title = rawData.title || rawData.caption || rawData.desc || 'Video Downloader';
+    let thumbnail = rawData.thumbnail || rawData.cover || rawData.image || '';
+    let links = [];
+
+    if (Array.isArray(rawData.medias)) {
+      links = rawData.medias.map(m => ({ url: m.url, quality: m.quality || m.extension || 'Download' }));
+    } else if (Array.isArray(rawData.urls)) {
+      links = rawData.urls.map(u => ({ url: typeof u === 'string' ? u : u.url, quality: u.subname || 'Download' }));
+    } else if (rawData.url) {
+      links = [{ url: rawData.url, quality: 'Download Video' }];
+    }
 
     return res.status(200).json({
       status: true,
-      data: response.data
+      result: { title, thumbnail, links }
     });
   } catch (error) {
-    console.error('[ERROR] Request Gagal:', error.message);
-    
-    return res.status(error.response?.status || 500).json({
-      status: false,
-      message: 'Gagal mengambil data dari getdl.space.',
-      error: error.response?.data || error.message
-    });
+    return res.status(500).json({ status: false, message: 'Gagal memproses URL' });
   }
 };
