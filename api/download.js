@@ -4,7 +4,7 @@ const BASE_URL = 'https://getdl.space';
 const API_ENDPOINT = `${BASE_URL}/api/download`;
 
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Referer': `${BASE_URL}/id`,
   'Origin': BASE_URL,
   'Content-Type': 'application/json',
@@ -13,7 +13,19 @@ const HEADERS = {
 };
 
 module.exports = async (req, res) => {
-  // Hanya menerima method POST
+  // Setup CORS Header
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ status: false, message: 'Method Not Allowed' });
   }
@@ -30,7 +42,7 @@ module.exports = async (req, res) => {
       {
         headers: HEADERS,
         responseType: 'json',
-        timeout: 10000
+        timeout: 15000
       }
     );
 
@@ -43,7 +55,7 @@ module.exports = async (req, res) => {
     
     return res.status(error.response?.status || 500).json({
       status: false,
-      message: 'Gagal mengambil data dari server penyedia.',
+      message: 'Gagal mengambil data dari getdl.space.',
       error: error.response?.data || error.message
     });
   }
